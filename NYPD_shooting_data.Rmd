@@ -1,0 +1,93 @@
+---
+title: "NYPD Shooting Data"
+author: "Erik Longuepee"
+date: "2023-03-12"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r library load, echo=FALSE}
+library(tidyverse)
+library(lubridate)
+```
+
+## NYPD Shooting Data (CSV): 
+This dataset is every shooting incident in New York City from 2006 through the end of the previous calendar year. [link](https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD) 
+
+```{r data load}
+file_url <- "https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv"
+
+shooting_data = read_csv(file_url)
+```
+## Data Cleaning
+Tidying the data involves selecting the occurance date and murder flag, renaming these columns, and then mutating the date format into the correct format.
+
+```{r data tidy}
+shooting_data_tidied <- shooting_data %>%
+  select(OCCUR_DATE,
+         STATISTICAL_MURDER_FLAG)%>%
+  rename(date = OCCUR_DATE,
+         murder = STATISTICAL_MURDER_FLAG) %>%
+  mutate(date = mdy(date)) 
+
+summary(shooting_data_tidied)
+```
+## Data Grouping by month
+In this step, data was grouped by month and for each month the total shootings, the total murders, and the percentage of shootings that were murders was calculated. The grouping by month was done using the floor_date function of the lubridate library.
+
+```{r data group by month}
+shooting_data_by_month <- shooting_data_tidied %>%
+  mutate(date = floor_date(date,
+                           unit = "months")) %>%
+  group_by(date) %>%
+  summarise(total_shootings = n(),
+            total_murders = sum(murder)) %>%
+  mutate(murder_percent = 100 * (total_murders / total_shootings))
+summary(shooting_data_by_month)
+```
+## Model by Total Shootings
+Initially, I thought to see if there was a relationship between the number of shootings and the percentage of shootings that were murders. The intuition behind this would be that the more shootings there were, the more likely shootings are to be murder.
+
+However, this didn't seem to result in any statistical significance. 
+
+```{r model by total shootings}
+mod_total_shootings = lm(murder_percent ~ total_shootings, data = shooting_data_by_month)
+summary(mod_total_shootings)
+
+shooting_data_by_month %>% mutate(shooting_pred = predict(mod_total_shootings)) -> shooting_data_by_month
+
+shooting_data_by_month %>%
+  ggplot(aes(x = total_shootings, y = murder_percent)) +
+  geom_point(aes(x= total_shootings, y = murder_percent), color = "red") +
+  geom_line(aes(x= total_shootings, y = shooting_pred), color = "blue")
+
+```
+
+## Model by Total Murders
+As a follow up, I wanted to see if there was a relationship between the number of murders and the percentage of shootings that were murders. The intuition here is that the more murders there are, the more likely any given shooting is a murder.
+
+This does seem yield a slightly more defined trend than previous, however it is a very weak trend. And much more data would be needed to show a relationship. 
+``` {r model by total murders}
+mod_total_murders = lm(murder_percent ~ total_murders, data = shooting_data_by_month)
+summary(mod_total_murders)
+
+shooting_data_by_month %>% mutate(murder_pred = predict(mod_total_murders)) -> shooting_data_by_month
+
+shooting_data_by_month %>%
+  ggplot(aes(x = total_murders, y = murder_percent)) +
+  geom_point(aes(x= total_murders, y = murder_percent), color = "red") +
+  geom_line(aes(x= total_murders, y = murder_pred), color = "blue")
+```
+
+## Conclusion and Potential Bias
+There is some potential source of bias in the dataset this analysis is based on, as there included in each row is the race, sex, and age group of both the perpetrator and victim for each shooting. 
+In this case, I've removed the chance for bias altogether by filtering out this information and looking at data totals by time period.
+
+I would call the relationship between the total number of shootings per month and the percentage of shootings that are murders in a month inconclusive. There doesn't seem to be any identifiable trend in the data.
+
+As to the relationship between total murders by shooting and percentage of shootings that are murders, there is a slightly more identifiable trend, however, without more data I would still call this data inconclusive. There is far too much variance in the data.
